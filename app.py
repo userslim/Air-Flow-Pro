@@ -2,11 +2,11 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 
-# --- CONFIGURATION & STANDARDS ---
-SS_553_MIN_ACH = 20  # Minimum Air Changes per Hour for Hawker Centers
+# --- CONFIGURATION & SS 553 STANDARDS ---
+SS_553_MIN_ACH = 20  
 FAN_TYPES = {
-    "HVLS (Low Speed High Volume)": {"wattage": 1500, "cfm": 30000, "radius": 3.5}, # 7m diameter
-    "Standard Ceiling Fan": {"wattage": 80, "cfm": 10000, "radius": 0.75},
+    "HVLS (High Volume Low Speed)": {"wattage": 1500, "cfm": 35000, "radius": 3.5}, # ~7m diameter
+    "Standard Ceiling Fan": {"wattage": 80, "cfm": 10000, "radius": 0.8},
     "Wall Mount Fan": {"wattage": 60, "cfm": 5000, "radius": 0.5}
 }
 
@@ -20,81 +20,61 @@ height = st.sidebar.number_input("Ceiling Height (m)", 3, 10, 5)
 
 st.sidebar.header("🌀 Fan Configuration")
 fan_choice = st.sidebar.selectbox("Select Fan Type", list(FAN_TYPES.keys()))
-num_fans = st.sidebar.slider("Number of Fans", 1, 20, 4)
+num_fans = st.sidebar.slider("Number of Fans", 1, 30, 4)
 fan_wattage = st.sidebar.number_input("Fan Wattage (W)", 1, 5000, FAN_TYPES[fan_choice]["wattage"])
 
-# --- PHYSICS ENGINE (Simplified 2D Airflow) ---
+# --- PHYSICS ENGINE (Simplified 2D Velocity Field) ---
 def simulate_airflow(w, l, n_fans, f_type):
-    # Create grid (1 point per meter)
-    x = np.linspace(0, w, w)
-    y = np.linspace(0, l, l)
+    x = np.linspace(0, w, int(w))
+    y = np.linspace(0, l, int(l))
     X, Y = np.meshgrid(x, y)
     
-    # Initialize velocity field
-    u = np.zeros_like(X)
-    v = np.zeros_like(X)
+    velocity = np.zeros_like(X)
     
-    # Place fans in a grid pattern
+    # Simple grid placement for fans
     rows = int(np.sqrt(n_fans))
     cols = (n_fans // rows) + (1 if n_fans % rows != 0 else 0)
     
     fan_r = FAN_TYPES[f_type]["radius"]
-    strength = FAN_TYPES[f_type]["cfm"] / 1000 # Normalized strength
+    strength = FAN_TYPES[f_type]["cfm"] / 10000 
     
     for i in range(n_fans):
         fx = (i % cols + 0.5) * (w / cols)
         fy = (i // cols + 0.5) * (l / rows)
         
-        # Distance from fan
+        # Calculate distance-based decay
         dist = np.sqrt((X - fx)**2 + (Y - fy)**2)
-        
-        # Airflow falls off with distance (Gaussian-like spread)
-        effect = strength * np.exp(-dist / (fan_r * 2))
-        u += (X - fx) / (dist + 0.1) * effect
-        v += (Y - fy) / (dist + 0.1) * effect
+        # SS 553 logic: Air velocity is highest under the fan and decays radially
+        velocity += strength * np.exp(-dist / (fan_r * 1.5))
 
-    velocity = np.sqrt(u**2 + v**2)
     return X, Y, velocity
 
 # --- MAIN DASHBOARD ---
-st.title("🇸🇬 Indoor Airflow Simulation: Hawker Center & Markets")
-st.markdown(f"**Compliance Check:** Target Air Changes per Hour (SS 553): `{SS_553_MIN_ACH} ACH`")
+st.title("🇸🇬 Hawker Center Airflow Simulator")
+st.markdown(f"**Compliance Target (SS 553):** `{SS_553_MIN_ACH} ACH` for Markets/Food Centers.")
 
 # Calculations
 total_cfm = num_fans * FAN_TYPES[fan_choice]["cfm"]
-volume_ft3 = (width * length * height) * 35.3147 # m3 to ft3
+volume_ft3 = (width * length * height) * 35.3147 
 calc_ach = (total_cfm * 60) / volume_ft3
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Airflow", f"{total_cfm:,} CFM")
-col2.metric("Calculated ACH", f"{calc_ach:.1f}", delta=f"{calc_ach - SS_553_MIN_ACH:.1f} vs Std")
-col3.metric("Total Power", f"{(num_fans * fan_wattage)/1000:.2f} kW")
+c1, c2, c3 = st.columns(3)
+c1.metric("Total Airflow", f"{total_cfm:,} CFM")
+c2.metric("Calculated ACH", f"{calc_ach:.1f}", delta=f"{calc_ach - SS_553_MIN_ACH:.1f}")
+c3.metric("Power Draw", f"{(num_fans * fan_wattage)/1000:.2f} kW")
 
 if calc_ach < SS_553_MIN_ACH:
-    st.error(f"⚠️ Warning: Below SS 553 requirement of {SS_553_MIN_ACH} ACH for markets/food centers.")
+    st.error(f"⚠️ Non-Compliant: Below SS 553 standard ({SS_553_MIN_ACH} ACH). Add more fans.")
 else:
-    st.success("✅ Meets ventilation requirements.")
+    st.success("✅ Compliant with ventilation standards.")
 
-# Simulation Visualization
+# Visualization
 X, Y, V = simulate_airflow(width, length, num_fans, fan_choice)
 
 fig = go.Figure(data=go.Heatmap(
     z=V, x=np.linspace(0, width, width), y=np.linspace(0, length, length),
-    colorscale='Viridis',
-    colorbar=dict(title="Velocity (m/s approx)")
+    colorscale='IceFire', colorbar=dict(title="Velocity (m/s)")
 ))
 
-fig.update_layout(
-    title=f"Air Velocity Distribution (Occupant Level)",
-    xaxis_title="Width (meters)",
-    yaxis_title="Length (meters)",
-    width=800, height=600
-)
-
+fig.update_layout(title="Predicted Air Velocity Distribution", xaxis_title="Width (m)", yaxis_title="Length (m)")
 st.plotly_chart(fig, use_container_width=True)
-
-st.info("""
-**Legend:** * **Purple/Blue:** Dead zones (Low airflow).
-* **Green/Yellow:** Optimal circulation areas.
-* **Note:** This simulation assumes an open-plan layout typical of NEA hawker centers.
-""")
