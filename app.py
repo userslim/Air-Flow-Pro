@@ -1,8 +1,50 @@
+"""
+SG Hawker Airflow Simulator
+Compliant with Singapore SS 553 Standards
+"""
+
 import streamlit as st
 import numpy as np
-import plotly.graph_objects as go
-import pandas as pd
+import sys
+import subprocess
+import importlib
+
+# Try to import plotly, if it fails, try to install it
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("Plotly is not installed. Attempting to install...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly"])
+        import plotly.graph_objects as go
+        import plotly.express as px
+        PLOTLY_AVAILABLE = True
+        st.success("Plotly installed successfully! Please refresh the page.")
+    except:
+        st.error("""
+        ⚠️ Plotly could not be installed automatically.
+        Please make sure your requirements.txt includes 'plotly==5.17.0'
+        """)
+
+# Try to import pandas
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    st.warning("Pandas is not installed. Some features may be limited.")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas"])
+        import pandas as pd
+        PANDAS_AVAILABLE = True
+    except:
+        pass
+
 from datetime import datetime
+import math
 
 # --- STANDARDS & SPECS (Singapore SS 553) ---
 SS_553_TARGET_ACH = 20  
@@ -16,7 +58,8 @@ FAN_SPECS = {
         "radius": 4.5, 
         "desc": "Ideal for open-plan centers with high ceilings.",
         "noise_level": "Low",
-        "mounting": "Ceiling"
+        "mounting": "Ceiling",
+        "image": "🔄"
     },
     "Industrial Ceiling Fan": {
         "wattage": 85, 
@@ -24,7 +67,8 @@ FAN_SPECS = {
         "radius": 1.5, 
         "desc": "Standard for high-density seating areas.",
         "noise_level": "Medium",
-        "mounting": "Ceiling"
+        "mounting": "Ceiling",
+        "image": "🌀"
     },
     "Wall Mount Fan": {
         "wattage": 65, 
@@ -32,7 +76,8 @@ FAN_SPECS = {
         "radius": 0.8, 
         "desc": "Targeted spot cooling for stalls and food preparation areas.",
         "noise_level": "Medium-High",
-        "mounting": "Wall"
+        "mounting": "Wall",
+        "image": "⬆️"
     },
     "Pedestal Fan": {
         "wattage": 75, 
@@ -40,7 +85,8 @@ FAN_SPECS = {
         "radius": 1.0, 
         "desc": "Portable option for flexible positioning.",
         "noise_level": "Medium",
-        "mounting": "Floor"
+        "mounting": "Floor",
+        "image": "📌"
     },
     "Misting Fan": {
         "wattage": 200, 
@@ -48,7 +94,8 @@ FAN_SPECS = {
         "radius": 2.0, 
         "desc": "Provides cooling through evaporation, ideal for outdoor areas.",
         "noise_level": "Medium",
-        "mounting": "Floor/Stand"
+        "mounting": "Floor/Stand",
+        "image": "💧"
     }
 }
 
@@ -58,24 +105,28 @@ APP_RECOMMENDATIONS = {
         "primary_fan": "HVLS (High Volume Low Speed)",
         "secondary_fan": "Industrial Ceiling Fan",
         "min_ach": 20,
-        "notes": "Combine HVLS for general ventilation with spot fans at busy stalls"
+        "notes": "Combine HVLS for general ventilation with spot fans at busy stalls",
+        "icon": "🍜"
     },
     "Wet Market": {
         "primary_fan": "Industrial Ceiling Fan",
         "secondary_fan": "Wall Mount Fan",
         "min_ach": 15,
-        "notes": "Focus on moisture control and targeted airflow at fish/meat stalls"
+        "notes": "Focus on moisture control and targeted airflow at fish/meat stalls",
+        "icon": "🐟"
     },
     "Industrial Canteen": {
         "primary_fan": "HVLS (High Volume Low Speed)",
         "secondary_fan": "Pedestal Fan",
         "min_ach": 18,
-        "notes": "HVLS for main dining, portable fans for flexibility during peak hours"
+        "notes": "HVLS for main dining, portable fans for flexibility during peak hours",
+        "icon": "🏭"
     }
 }
 
 st.set_page_config(
     page_title="SG Hawker Airflow Simulator", 
+    page_icon="🇸🇬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -88,36 +139,55 @@ st.markdown("""
         color: #FF4B4B;
         text-align: center;
         margin-bottom: 1rem;
+        padding: 1rem;
+        background: linear-gradient(90deg, #fff3cd 0%, #fff 100%);
+        border-radius: 10px;
     }
     .metric-card {
         background-color: #f0f2f6;
         padding: 1rem;
         border-radius: 0.5rem;
         text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .compliant {
         background-color: #d4edda;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 0.5rem solid #28a745;
+        margin: 1rem 0;
     }
     .non-compliant {
         background-color: #fff3cd;
         padding: 1rem;
         border-radius: 0.5rem;
         border-left: 0.5rem solid #ffc107;
+        margin: 1rem 0;
+    }
+    .fan-card {
+        background-color: #e3f2fd;
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+        text-align: center;
+        margin: 0.2rem;
+    }
+    .stButton>button {
+        width: 100%;
+        background-color: #FF4B4B;
+        color: white;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # --- UI SIDEBAR ---
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/fan--v1.png", width=100)
+    st.image("https://img.icons8.com/color/96/000000/singapore.png", width=100)
     st.header("📍 Building Layout")
     
     app_type = st.selectbox(
         "Application", 
-        ["Hawker Center", "Wet Market", "Industrial Canteen"],
+        list(APP_RECOMMENDATIONS.keys()),
+        format_func=lambda x: f"{APP_RECOMMENDATIONS[x]['icon']} {x}",
         help="Select the type of food establishment"
     )
     
@@ -129,6 +199,11 @@ with st.sidebar:
     
     height = st.number_input("Ceiling Height (m)", 3.0, 10.0, 5.0, step=0.5)
     
+    # Show area summary
+    area_m2 = width * length
+    volume_m3 = width * length * height
+    st.info(f"📐 Area: {area_m2:.0f} m² | Volume: {volume_m3:.0f} m³")
+    
     st.header("🌀 Fan Selection")
     
     # Show recommended fan types
@@ -138,18 +213,25 @@ with st.sidebar:
     fan_choice = st.selectbox(
         "Fan Type", 
         list(FAN_SPECS.keys()),
-        help=FAN_SPECS[list(FAN_SPECS.keys())[0]]["desc"]
+        format_func=lambda x: f"{FAN_SPECS[x]['image']} {x}",
+        help="Select fan type for simulation"
     )
     
     num_fans = st.slider("Number of Fans", 1, 40, 6)
     
     # Show fan details
-    with st.expander("Fan Details"):
+    with st.expander("📋 Fan Details"):
         fan = FAN_SPECS[fan_choice]
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**Type:** {fan_choice}")
+            st.write(f"**Wattage:** {fan['wattage']}W")
+            st.write(f"**Airflow:** {fan['cfm']:,} CFM")
+        with col2:
+            st.write(f"**Mounting:** {fan['mounting']}")
+            st.write(f"**Noise:** {fan['noise_level']}")
+            st.write(f"**Coverage:** {fan['radius']}m radius")
         st.write(f"**Description:** {fan['desc']}")
-        st.write(f"**Mounting:** {fan['mounting']}")
-        st.write(f"**Noise Level:** {fan['noise_level']}")
-        st.write(f"**Coverage Radius:** {fan['radius']}m")
     
     # Operating hours
     st.header("⏰ Operating Hours")
@@ -168,299 +250,282 @@ monthly_consumption = daily_consumption * days_per_month
 est_monthly_cost = monthly_consumption * ELECTRICITY_RATE
 
 # --- MAIN DASHBOARD ---
-st.markdown("<h1 class='main-title'>🇸🇬 SG Hawker Airflow Simulator</h1>", unsafe_allow_html=True)
+st.markdown(f"<h1 class='main-title'>🇸🇬 SG Hawker Airflow Simulator</h1>", unsafe_allow_html=True)
 
-# Top metrics
+# Top metrics in columns
 col1, col2, col3, col4 = st.columns(4)
 with col1:
+    st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
     st.metric("Floor Area", f"{area_m2:.0f} m²")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col2:
+    st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
     st.metric("Volume", f"{volume_m3:.0f} m³")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col3:
+    st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
     st.metric("Total Airflow", f"{total_cfm:,.0f} CFM")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col4:
+    st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
     st.metric("Total Power", f"{total_kw:.1f} kW")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Compliance check
+# Compliance section
 st.markdown(f"**Target Air Changes per Hour (SS 553):** `{SS_553_TARGET_ACH} ACH` for food establishments")
 
-c1, c2 = st.columns(2)
-with c1:
+col1, col2 = st.columns(2)
+with col1:
+    delta = ach_calculated - SS_553_TARGET_ACH
+    delta_color = "normal" if delta >= 0 else "inverse"
     st.metric(
         "Calculated ACH", 
         f"{ach_calculated:.1f} ACH", 
-        delta=f"{ach_calculated - SS_553_TARGET_ACH:.1f} ACH",
-        delta_color="inverse"
+        delta=f"{delta:+.1f} ACH",
+        delta_color="off"  # We'll handle color manually
     )
 
-with c2:
+with col2:
     st.metric(
         "Est. Monthly Cost", 
         f"S${est_monthly_cost:.2f}",
-        help=f"Based on {hours_per_day}h/day, {days_per_month} days/month"
+        help=f"Based on {hours_per_day}h/day, {days_per_month} days/month @ ${ELECTRICITY_RATE}/kWh"
     )
 
 # Compliance status
 if ach_calculated < SS_553_TARGET_ACH:
+    deficit = SS_553_TARGET_ACH - ach_calculated
+    additional_fans_needed = int(np.ceil(deficit / (FAN_SPECS[fan_choice]["cfm"] * 60 / volume_ft3)))
+    
     st.markdown(f"""
     <div class='non-compliant'>
-        ⚠️ <b>Warning:</b> Below SS 553 requirement for {app_type}. 
+        ⚠️ <b>Warning:</b> Below SS 553 requirement for {app_type}<br>
         Current: {ach_calculated:.1f} ACH | Required: {SS_553_TARGET_ACH} ACH<br>
-        <b>Recommendation:</b> Increase fan count by {max(1, int((SS_553_TARGET_ACH - ach_calculated) / ach_calculated * num_fans))} or use HVLS fans.
+        <b>Recommendation:</b> Add {additional_fans_needed} more {fan_choice} unit(s) or use HVLS fans.
     </div>
     """, unsafe_allow_html=True)
 else:
     st.markdown(f"""
     <div class='compliant'>
-        ✅ <b>Compliance:</b> Meets ventilation requirements for {app_type}.<br>
+        ✅ <b>Compliance Achieved:</b> Meets SS 553 ventilation requirements<br>
         Current: {ach_calculated:.1f} ACH | Required: {SS_553_TARGET_ACH} ACH
     </div>
     """, unsafe_allow_html=True)
 
-# --- PHYSICS SIMULATION ---
-def generate_sim_data(w, l, h, n, f_type):
-    """Generate airflow simulation data"""
-    # Create grid with reasonable resolution
-    grid_size = 50  # Fixed grid size for performance
-    x = np.linspace(0, w, grid_size)
-    y = np.linspace(0, l, grid_size)
-    X, Y = np.meshgrid(x, y)
-    V = np.zeros_like(X)
-    
-    # Calculate fan positions in a grid pattern
-    if n > 0:
-        rows = int(np.sqrt(n))
-        cols = int(np.ceil(n / rows))
+# --- VISUALIZATION SECTION ---
+st.subheader("🌪️ Airflow Distribution Analysis")
+
+if PLOTLY_AVAILABLE:
+    # Generate simulation data
+    def generate_sim_data(w, l, h, n, f_type):
+        """Generate airflow simulation data"""
+        # Create grid with reasonable resolution
+        grid_size = 40
+        x = np.linspace(0, w, grid_size)
+        y = np.linspace(0, l, grid_size)
+        X, Y = np.meshgrid(x, y)
+        V = np.zeros_like(X)
         
-        fan_spec = FAN_SPECS[f_type]
-        r_val = fan_spec["radius"]
-        
-        # Base strength factor
-        strength = fan_spec["cfm"] / 10000  # Normalized
-        
-        for i in range(n):
-            # Calculate fan position
-            if cols > 0:
-                fx = (i % cols + 0.5) * (w / cols)
-            else:
-                fx = w / 2
+        if n > 0:
+            rows = int(np.sqrt(n))
+            cols = int(np.ceil(n / rows))
+            
+            fan_spec = FAN_SPECS[f_type]
+            r_val = fan_spec["radius"]
+            strength = fan_spec["cfm"] / 10000
+            
+            for i in range(n):
+                if cols > 0:
+                    fx = (i % cols + 0.5) * (w / cols)
+                else:
+                    fx = w / 2
+                    
+                if rows > 0:
+                    fy = (i // cols + 0.5) * (l / rows)
+                else:
+                    fy = l / 2
                 
-            if rows > 0:
-                fy = (i // cols + 0.5) * (l / rows)
-            else:
-                fy = l / 2
-            
-            # Calculate distance from fan
-            dist = np.sqrt((X - fx)**2 + (Y - fy)**2)
-            
-            # Airflow model: 
-            # - Peak at fan location
-            # - Exponential decay with distance
-            # - Height factor affects distribution
-            height_factor = 1.0 - min(h / 10, 0.5)  # Higher ceilings reduce ground velocity
-            
-            # Add vertical circulation effect
-            vertical_circulation = np.sin(dist / r_val * np.pi/2) * height_factor
-            
-            # Combine effects
-            V += strength * np.exp(-dist / (r_val * 1.5)) * (1 + vertical_circulation * 0.3)
-    
-    return X, Y, V
-
-# --- VISUALIZATION ---
-st.subheader("🌪️ Airflow Distribution Map")
-
-# Generate simulation data
-X, Y, V = generate_sim_data(width, length, height, num_fans, fan_choice)
-
-# Create heatmap
-fig = go.Figure()
-
-# Add heatmap
-fig.add_trace(go.Heatmap(
-    z=V,
-    x=np.linspace(0, width, V.shape[1]),
-    y=np.linspace(0, length, V.shape[0]),
-    colorscale=[
-        [0, 'darkblue'],
-        [0.2, 'blue'],
-        [0.4, 'cyan'],
-        [0.6, 'yellow'],
-        [0.8, 'orange'],
-        [1, 'red']
-    ],
-    zmin=0,
-    zmax=np.max(V) if np.max(V) > 0 else 1,
-    colorbar=dict(
-        title="Air Velocity<br>(normalized)",
-        titleside="right"
-    ),
-    hovertemplate='X: %{x:.1f}m<br>Y: %{y:.1f}m<br>Velocity: %{z:.2f}<extra></extra>'
-))
-
-# Add fan positions
-fan_positions_x = []
-fan_positions_y = []
-
-if num_fans > 0:
-    rows = int(np.sqrt(num_fans))
-    cols = int(np.ceil(num_fans / rows))
-    
-    for i in range(num_fans):
-        if cols > 0:
-            fx = (i % cols + 0.5) * (width / cols)
-        else:
-            fx = width / 2
-            
-        if rows > 0:
-            fy = (i // cols + 0.5) * (length / rows)
-        else:
-            fy = length / 2
+                dist = np.sqrt((X - fx)**2 + (Y - fy)**2)
+                height_factor = 1.0 - min(h / 10, 0.5)
+                V += strength * np.exp(-dist / (r_val * 1.5)) * height_factor
         
-        fan_positions_x.append(fx)
-        fan_positions_y.append(fy)
+        return X, Y, V
 
-# Add fan markers
-fig.add_trace(go.Scatter(
-    x=fan_positions_x,
-    y=fan_positions_y,
-    mode='markers+text',
-    marker=dict(
-        symbol='circle',
-        size=15,
-        color='white',
-        line=dict(color='black', width=2)
-    ),
-    text=['💨' for _ in range(num_fans)],
-    textposition="middle center",
-    textfont=dict(size=12),
-    name='Fan Positions',
-    hovertext=[f'Fan {i+1}<br>Position: ({fan_positions_x[i]:.1f}, {fan_positions_y[i]:.1f})' 
-               for i in range(num_fans)],
-    hoverinfo='text'
-))
+    # Generate data
+    X, Y, V = generate_sim_data(width, length, height, num_fans, fan_choice)
 
-# Add walls/obstacles (optional - can be customized)
-# For demo, add some stall positions as examples
-if app_type == "Hawker Center":
-    # Add sample stall positions (just for visualization)
-    stall_positions = [
-        [width*0.25, length*0.25],
-        [width*0.75, length*0.25],
-        [width*0.25, length*0.75],
-        [width*0.75, length*0.75]
-    ]
+    # Create visualization
+    col1, col2 = st.columns([2, 1])
     
-    fig.add_trace(go.Scatter(
-        x=[p[0] for p in stall_positions],
-        y=[p[1] for p in stall_positions],
-        mode='markers',
-        marker=dict(
-            symbol='square',
-            size=20,
-            color='brown',
-            line=dict(color='black', width=1)
-        ),
-        name='Stalls',
-        hovertext=[f'Stall {i+1}' for i in range(len(stall_positions))],
-        hoverinfo='text'
-    ))
+    with col1:
+        # Create heatmap
+        fig = go.Figure()
+        
+        fig.add_trace(go.Heatmap(
+            z=V,
+            x=np.linspace(0, width, V.shape[1]),
+            y=np.linspace(0, length, V.shape[0]),
+            colorscale='RdYlBu_r',
+            zmin=0,
+            zmax=np.max(V) if np.max(V) > 0 else 1,
+            colorbar=dict(
+                title="Air Velocity<br>(normalized)",
+                titleside="right"
+            ),
+            hovertemplate='X: %{x:.1f}m<br>Y: %{y:.1f}m<br>Velocity: %{z:.2f}<extra></extra>'
+        ))
+        
+        # Add fan positions
+        if num_fans > 0:
+            rows = int(np.sqrt(num_fans))
+            cols = int(np.ceil(num_fans / rows))
+            
+            fan_x = []
+            fan_y = []
+            
+            for i in range(num_fans):
+                if cols > 0:
+                    fx = (i % cols + 0.5) * (width / cols)
+                else:
+                    fx = width / 2
+                    
+                if rows > 0:
+                    fy = (i // cols + 0.5) * (length / rows)
+                else:
+                    fy = length / 2
+                
+                fan_x.append(fx)
+                fan_y.append(fy)
+            
+            fig.add_trace(go.Scatter(
+                x=fan_x,
+                y=fan_y,
+                mode='markers',
+                marker=dict(
+                    symbol='circle',
+                    size=12,
+                    color='black',
+                    line=dict(color='white', width=2)
+                ),
+                name='Fan Positions',
+                text=[f'Fan {i+1}' for i in range(num_fans)],
+                hoverinfo='text'
+            ))
+        
+        fig.update_layout(
+            title=f"Airflow Distribution - {fan_choice} ({num_fans} units)",
+            xaxis_title="Width (meters)",
+            yaxis_title="Length (meters)",
+            height=500,
+            hovermode='closest'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.markdown("### 📊 Statistics")
+        
+        # Calculate statistics
+        avg_velocity = np.mean(V)
+        max_velocity = np.max(V)
+        min_velocity = np.min(V)
+        std_velocity = np.std(V)
+        
+        # Coverage areas
+        low_flow = np.sum(V < 0.2) / V.size * 100
+        medium_flow = np.sum((V >= 0.2) & (V < 0.5)) / V.size * 100
+        high_flow = np.sum(V >= 0.5) / V.size * 100
+        
+        st.markdown(f"""
+        <div class='fan-card'>
+            <h4>Velocity Distribution</h4>
+            <p>Average: {avg_velocity:.2f}</p>
+            <p>Maximum: {max_velocity:.2f}</p>
+            <p>Minimum: {min_velocity:.2f}</p>
+            <p>Std Dev: {std_velocity:.2f}</p>
+        </div>
+        
+        <div class='fan-card'>
+            <h4>Coverage Analysis</h4>
+            <p style='color: blue;'>Low Flow (<0.2): {low_flow:.1f}%</p>
+            <p style='color: orange;'>Medium Flow (0.2-0.5): {medium_flow:.1f}%</p>
+            <p style='color: red;'>High Flow (>0.5): {high_flow:.1f}%</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-fig.update_layout(
-    title=f"Airflow Distribution - {fan_choice} ({num_fans} units)",
-    xaxis_title="Width (meters)",
-    yaxis_title="Length (meters)",
-    height=600,
-    hovermode='closest',
-    showlegend=True,
-    legend=dict(
-        yanchor="top",
-        y=0.99,
-        xanchor="left",
-        x=0.01
-    )
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# --- ADDITIONAL ANALYTICS ---
-st.subheader("📊 Performance Analytics")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    # Calculate average velocity in key areas
-    avg_velocity = np.mean(V)
-    st.metric(
-        "Average Air Velocity",
-        f"{avg_velocity:.2f} m/s",
-        help="Mean air speed across the entire area"
-    )
-
-with col2:
-    # Calculate coverage (areas with velocity > 0.3)
-    threshold = 0.3
-    coverage = np.sum(V > threshold) / V.size * 100
-    st.metric(
-        "Effective Coverage",
-        f"{coverage:.1f}%",
-        help=f"Area with velocity > {threshold} m/s"
-    )
-
-with col3:
-    # Peak velocity
-    peak_velocity = np.max(V)
-    st.metric(
-        "Peak Velocity",
-        f"{peak_velocity:.2f} m/s",
-        help="Maximum air speed detected"
-    )
+else:
+    # Fallback visualization when plotly is not available
+    st.warning("""
+    ⚠️ Plotly is not available. Showing simplified text-based analysis.
+    
+    To enable interactive visualizations, please ensure plotly is installed:
+    ```bash
+    pip install plotly
+    ```
+    """)
+    
+    # Simple text-based representation
+    st.markdown("### Simplified Airflow Analysis")
+    
+    # Create a simple ASCII representation
+    grid_size = 20
+    chars = ['⬜', '🟨', '🟧', '🟥']
+    
+    result = ""
+    for i in range(grid_size):
+        row = ""
+        for j in range(grid_size):
+            # Simple distance-based calculation
+            dist_to_center = ((i - grid_size/2)**2 + (j - grid_size/2)**2)**0.5
+            if dist_to_center < 3:
+                row += chars[3]
+            elif dist_to_center < 6:
+                row += chars[2]
+            elif dist_to_center < 9:
+                row += chars[1]
+            else:
+                row += chars[0]
+        result += row + "\n"
+    
+    st.text(result)
+    st.caption("Legend: 🟥 High flow, 🟧 Medium flow, 🟨 Low flow, ⬜ Minimal flow")
 
 # --- RECOMMENDATIONS ---
 st.subheader("💡 Optimization Recommendations")
 
+# Generate recommendations based on calculations
 recs = []
 
-# Check ACH compliance
 if ach_calculated < SS_553_TARGET_ACH:
-    recs.append(f"❌ **Insufficient ACH**: Need {SS_553_TARGET_ACH - ach_calculated:.1f} more ACH")
-    additional_fans = int((SS_553_TARGET_ACH - ach_calculated) / (FAN_SPECS[fan_choice]["cfm"] * 60 / volume_ft3))
-    recs.append(f"   → Add {max(1, additional_fans)} more {fan_choice} units")
+    deficit = SS_553_TARGET_ACH - ach_calculated
+    additional_fans = int(np.ceil(deficit / (FAN_SPECS[fan_choice]["cfm"] * 60 / volume_ft3)))
+    recs.append(("🔴", f"Insufficient ACH - Add {additional_fans} more fans"))
 
-# Check coverage
-if coverage < 60:
-    recs.append(f"⚠️ **Poor coverage**: Only {coverage:.1f}% area effectively covered")
-    recs.append("   → Consider repositioning fans or adding units in dead zones")
-
-# Check velocity
-if avg_velocity < 0.4:
-    recs.append(f"⚠️ **Low average velocity**: {avg_velocity:.2f} m/s")
-    recs.append("   → Consider higher CFM fans or additional units")
-elif avg_velocity > 1.0:
-    recs.append(f"ℹ️ **High velocity**: {avg_velocity:.2f} m/s")
-    recs.append("   → May cause discomfort; consider reducing fan speed")
+if PLOTLY_AVAILABLE:
+    avg_velocity = np.mean(V)
+    if avg_velocity < 0.3:
+        recs.append(("🟡", "Low average velocity - Consider repositioning fans"))
+    elif avg_velocity > 0.8:
+        recs.append(("🟢", "Good air velocity achieved"))
 
 # Application-specific recommendations
 app_rec = APP_RECOMMENDATIONS[app_type]
-recs.append(f"💡 **{app_type} tip**: {app_rec['notes']}")
+recs.append(("💡", f"{app_type} tip: {app_rec['notes']}"))
 
 # Energy efficiency
-cost_per_ach = est_monthly_cost / ach_calculated if ach_calculated > 0 else 0
-if cost_per_ach > 10:
-    recs.append(f"💰 **Energy efficiency**: Cost per ACH is ${cost_per_ach:.2f}")
-    recs.append("   → Consider more efficient fan models")
+if est_monthly_cost > 500:
+    recs.append(("💰", "High energy cost - Consider more efficient fan models"))
 
 # Display recommendations
-for rec in recs:
-    st.markdown(rec)
+for icon, text in recs:
+    st.info(f"{icon} {text}")
 
 # --- EXPORT FUNCTIONALITY ---
 st.subheader("📥 Export Report")
 
-if st.button("Generate Report"):
-    # Create report
-    report = f"""
-SG HAWKER AIRFLOW SIMULATION REPORT
+if st.button("Generate Comprehensive Report"):
+    # Create detailed report
+    report = f"""SG HAWKER AIRFLOW SIMULATION REPORT
 ====================================
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
@@ -485,9 +550,6 @@ PERFORMANCE METRICS
 Calculated ACH: {ach_calculated:.1f}
 Target ACH (SS 553): {SS_553_TARGET_ACH}
 Status: {'✅ COMPLIANT' if ach_calculated >= SS_553_TARGET_ACH else '❌ NON-COMPLIANT'}
-Average Velocity: {avg_velocity:.2f} m/s
-Coverage Area: {coverage:.1f}%
-Peak Velocity: {peak_velocity:.2f} m/s
 
 ENERGY COSTS
 -----------
@@ -498,46 +560,55 @@ Electricity Rate: ${ELECTRICITY_RATE}/kWh
 
 RECOMMENDATIONS
 --------------
-{chr(10).join(recs)}
+{chr(10).join([f'• {text}' for _, text in recs])}
 
 ---
 Report generated by SG Hawker Airflow Simulator
-For professional consultation, contact mechanical engineer.
+For professional consultation, contact a mechanical engineer.
     """
     
     st.download_button(
-        label="Download Report (TXT)",
+        label="📥 Download Report (TXT)",
         data=report,
-        file_name=f"airflow_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        file_name=f"sg_airflow_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
         mime="text/plain"
     )
 
 # --- SS 553 REFERENCE ---
-with st.expander("📚 About SS 553 Standard"):
+with st.expander("📚 About SS 553: Code of Practice for Air-Conditioning and Mechanical Ventilation"):
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("""
-        **Singapore Standard SS 553:**
-        - Code of Practice for Air-Conditioning and Mechanical Ventilation in Buildings
-        - **Minimum ACH:** 20 air changes per hour for food establishments
-        - **Purpose:** Ensure adequate ventilation for occupant health and comfort
-        - **Scope:** Covers hawker centers, restaurants, canteens, and food courts
+        **Key Requirements:**
+        - Minimum 20 air changes per hour for food establishments
+        - Regular maintenance and testing required
+        - Records must be kept for inspection
+        - Local exhaust for cooking areas
         """)
     
     with col2:
         st.markdown("""
-        **Compliance Requirements:**
-        - Regular testing and maintenance
-        - Records of ventilation performance
-        - Professional assessment recommended
-        - Consider localised exhaust for cooking areas
+        **Compliance Tips:**
+        - Use combination of HVLS and spot fans
+        - Consider heat load from cooking equipment
+        - Account for occupancy density
+        - Regular filter cleaning
         """)
 
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: gray;'>
-    <small>🇸🇬 SG Hawker Airflow Simulator v2.0 | For preliminary design only | Always consult with mechanical engineers</small>
+<div style='text-align: center; color: gray; padding: 1rem;'>
+    <small>🇸🇬 SG Hawker Airflow Simulator v2.0 | For preliminary design only | Always consult with M&E engineers for final design</small>
+    <br>
+    <small>⚡ Compliant with Singapore Standard SS 553:2022</small>
 </div>
 """, unsafe_allow_html=True)
+
+# Debug information (optional - remove in production)
+if st.checkbox("Show Debug Info", False):
+    st.write("### Debug Information")
+    st.write(f"Plotly Available: {PLOTLY_AVAILABLE}")
+    st.write(f"Pandas Available: {PANDAS_AVAILABLE}")
+    st.write(f"Python Version: {sys.version}")
