@@ -25,33 +25,59 @@ height = st.sidebar.number_input("Ceiling Height (m)", 3, 10, 5)
 cutout_w = 0
 cutout_l = 0
 if shape_type == "Custom L-Shape":
-    st.sidebar.subheader("✂️ Cutout Dimensions")
-    st.sidebar.info("This defines the 'empty' area of the L-shape (top-right corner).")
-    cutout_w = st.sidebar.slider("Cutout Width (m)", 0, int(width-2), int(width*0.4))
-    cutout_l = st.sidebar.slider("Cutout Length (m)", 0, int(length-2), int(length*0.4))
+    st.sidebar.subheader("✂️ Cutout Settings")
+    st.sidebar.info("Adjust sliders to define the missing corner of the L-shape.")
+    cutout_w = st.sidebar.slider("Cutout Width (m)", 0, int(width-2), 12)
+    cutout_l = st.sidebar.slider("Cutout Length (m)", 0, int(length-2), 16)
 
 st.sidebar.header("🌀 Fan Settings")
 fan_choice = st.sidebar.selectbox("Fan Model", list(FAN_TYPES.keys()))
 num_fans_requested = st.sidebar.slider("Number of Fans", 1, 50, 8)
 
+# --- DONATION SECTION ---
+st.sidebar.markdown("---")
+st.sidebar.header("☕ Support Development")
+st.sidebar.write("If this tool helps your project, consider supporting its maintenance!")
+
+# ACTION REQUIRED: Replace 'YOUR_PAYPAL_USERNAME' with your actual username
+# Example: "https://paypal.me/johndoe"
+my_paypal_username = "YOUR_PAYPAL_USERNAME" 
+paypal_link = f"https://paypal.me/{my_paypal_username}"
+
+st.sidebar.markdown(
+    f"""
+    <a href="{paypal_link}" target="_blank">
+        <div style="
+            background-color: #0070ba;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            border-radius: 5px;
+            font-weight: bold;
+            text-decoration: none;
+            display: block;
+        ">
+            Donate via PayPal 💳
+        </div>
+    </a>
+    """,
+    unsafe_allow_html=True
+)
+st.sidebar.caption("Thank you for your generosity! 🙏")
+
 # --- SIMULATION ENGINE ---
 def run_simulation(w, l, n, f_type, shape, cw, cl):
-    # Create grid
     x = np.linspace(0, w, int(w))
     y = np.linspace(0, l, int(l))
     X, Y = np.meshgrid(x, y)
     V = np.zeros_like(X)
 
-    # 1. Apply Shape Mask
     mask = np.ones_like(X)
     if shape == "Custom L-Shape":
-        # Create a mask where the 'cutout' area is NaN
-        # Logic: If X is in the last 'cw' meters AND Y is in the last 'cl' meters
         mask[(X > (w - cw)) & (Y > (l - cl))] = np.nan
 
     net_area = np.nansum(mask)
 
-    # 2. Place Fans (Grid Logic)
     rows = int(np.sqrt(n))
     cols = (n // rows) + (1 if n % rows != 0 else 0)
     r_eff = FAN_TYPES[f_type]["radius"]
@@ -61,14 +87,11 @@ def run_simulation(w, l, n, f_type, shape, cw, cl):
     for i in range(n):
         fx = (i % cols + 0.5) * (w / cols)
         fy = (i // cols + 0.5) * (l / rows)
-
-        # Only place fan if it's NOT in the 'cutout' area
         is_in_cutout = (shape == "Custom L-Shape") and (fx > (w - cw) and fy > (l - cl))
         
         if not is_in_cutout:
             placed_fans += 1
             dist = np.sqrt((X - fx)**2 + (Y - fy)**2)
-            # Basic decay model
             V += strength * np.exp(-dist / (r_eff * 1.5))
 
     V = V * mask
@@ -91,7 +114,7 @@ c2.metric("Calculated ACH", f"{calc_ach:.1f}", delta=f"{calc_ach - SS_553_MIN_AC
 c3.metric("Fans Active", f"{actual_fans} of {num_fans_requested}")
 
 if calc_ach < SS_553_MIN_ACH:
-    st.error(f"⚠️ Failed Compliance: Insufficient air changes for this volume ({calc_ach:.1f} ACH).")
+    st.error(f"⚠️ Failed Compliance: Insufficient air changes ({calc_ach:.1f} ACH).")
 else:
     st.success("✅ Compliance Met: Adequate ventilation for current occupant load.")
 
@@ -106,11 +129,7 @@ fig = go.Figure(data=go.Heatmap(
 
 fig.update_layout(
     title=f"Air Velocity Profile (Active Fans: {actual_fans})",
-    xaxis_title="Width (m)", yaxis_title="Length (m)", height=600,
-    plot_bgcolor='rgba(0,0,0,0)'
+    xaxis_title="Width (m)", yaxis_title="Length (m)", height=600
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
-st.sidebar.markdown("---")
-st.sidebar.info(f"**Calculated Perimeter:** {((width+length)*2) - (cutout_w+cutout_l if shape_type != 'Regular' else 0)} m")
