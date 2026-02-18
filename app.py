@@ -42,7 +42,7 @@ st.sidebar.write("If this tool helps your project, consider supporting its maint
 # ACTION REQUIRED: Replace 'YOUR_PAYPAL_USERNAME' with your actual username
 # Example: "https://paypal.me/johndoe"
 my_paypal_username = "YOUR_PAYPAL_USERNAME" 
-paypal_link = f"https://paypal.me/{my_paypal_username}"
+paypal_link = f"https://www.paypal.com/ncp/payment/CP7XWNDW8NALY"
 
 st.sidebar.markdown(
     f"""
@@ -133,3 +133,4 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
