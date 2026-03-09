@@ -39,6 +39,10 @@ st.sidebar.header("🌀 Fan Settings")
 fan_choice = st.sidebar.selectbox("Fan Model", list(FAN_TYPES.keys()))
 num_fans_requested = st.sidebar.slider("Number of Fans", 1, 50, 10)
 
+# --- IMAGE UPLOAD ---
+st.sidebar.header("📷 Actual Area Image")
+uploaded_image = st.sidebar.file_uploader("Upload floor plan photo", type=['png', 'jpg', 'jpeg'])
+
 # --- DONATION SECTION ---
 st.sidebar.markdown("---")
 st.sidebar.header("☕ Support Development")
@@ -122,9 +126,25 @@ if calc_ach < SS_553_MIN_ACH:
 else:
     st.success("✅ Standards Met.")
 
-fig = go.Figure(data=go.Heatmap(
-    z=V, x=np.linspace(0, width, int(width)), y=np.linspace(0, length, int(length)),
-    colorscale='Viridis', zmin=0, zmax=5, colorbar=dict(title="m/s")
-))
-fig.update_layout(title="Velocity Distribution Heatmap", height=600)
-st.plotly_chart(fig, use_container_width=True)
+# --- DISPLAY HEATMAP AND IMAGE ---
+if uploaded_image is not None:
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📊 Simulated Airflow")
+        fig = go.Figure(data=go.Heatmap(
+            z=V, x=np.linspace(0, width, int(width)), y=np.linspace(0, length, int(length)),
+            colorscale='Viridis', zmin=0, zmax=5, colorbar=dict(title="m/s")
+        ))
+        fig.update_layout(title="Velocity Distribution Heatmap", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    with col2:
+        st.subheader("📷 Uploaded Floor Plan")
+        st.image(uploaded_image, caption="Actual Area Image", use_container_width=True)
+else:
+    st.subheader("📊 Simulated Airflow")
+    fig = go.Figure(data=go.Heatmap(
+        z=V, x=np.linspace(0, width, int(width)), y=np.linspace(0, length, int(length)),
+        colorscale='Viridis', zmin=0, zmax=5, colorbar=dict(title="m/s")
+    ))
+    fig.update_layout(title="Velocity Distribution Heatmap", height=600)
+    st.plotly_chart(fig, use_container_width=True)
