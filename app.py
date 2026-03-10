@@ -1,43 +1,140 @@
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import pandas as pd
 
 # --- STANDARDS (Singapore SS 553) ---
 SS_553_MIN_ACH = 20
-FAN_TYPES = {
-    "HVLS (High Volume Low Speed)": {"wattage": 1500, "cfm": 35000, "radius": 4.5},
-    "Standard Ceiling Fan": {"wattage": 85, "cfm": 11000, "radius": 1.2},
-    "Industrial Wall Fan": {"wattage": 65, "cfm": 6000, "radius": 0.8}
+
+# --- FAN DATABASE from the RFI document (Tanglin Halt Hawker Centre) ---
+FAN_DATABASE = {
+    "8-Blade Powerfoil 8 (3.6m)": {
+        "diameter": 3.6,
+        "blades": 8,
+        "weight_kg": 91,
+        "power_w": 1100,
+        "cfm": 287000,  # Approx from document (8200 m³/min = 289,600 CFM)
+        "max_rpm": 135,
+        "isolator": "32A Single Phase",
+        "manufacturer": "Big Ass Fans"
+    },
+    "8-Blade Powerfoil 8 (4.3m)": {
+        "diameter": 4.3,
+        "blades": 8,
+        "weight_kg": 95,
+        "power_w": 1500,
+        "cfm": 360500,  # 10300 m³/min = 363,800 CFM
+        "max_rpm": 109,
+        "isolator": "32A Single Phase",
+        "manufacturer": "Big Ass Fans"
+    },
+    "6-Blade HORIZON (1.8m)": {
+        "diameter": 1.8,
+        "blades": 6,
+        "weight_kg": 35,
+        "power_w": 500,
+        "cfm": 175000,  # 5000 m³/min = 176,500 CFM
+        "max_rpm": 90,
+        "isolator": "20A Single Phase",
+        "manufacturer": "Spacefans"
+    },
+    "6-Blade HORIZON (3.6m)": {
+        "diameter": 3.6,
+        "blades": 6,
+        "weight_kg": 53,
+        "power_w": 500,
+        "cfm": 287000,  # 8200 m³/min
+        "max_rpm": 67,
+        "isolator": "20A Single Phase",
+        "manufacturer": "Spacefans"
+    },
+    "6-Blade HORIZON (4.3m)": {
+        "diameter": 4.3,
+        "blades": 6,
+        "weight_kg": 60,
+        "power_w": 500,
+        "cfm": 360500,  # 10300 m³/min
+        "max_rpm": 58,
+        "isolator": "20A Single Phase",
+        "manufacturer": "Spacefans"
+    }
 }
 
-st.set_page_config(page_title="SG Hawker Airflow Pro", layout="wide")
+# Pre-configured project scenarios from the document
+PROJECT_SCENARIOS = {
+    "Original Design (8-Blade, 3.6m + 4.3m)": {
+        "fans": [
+            {"model": "8-Blade Powerfoil 8 (3.6m)", "quantity": 14},
+            {"model": "8-Blade Powerfoil 8 (4.3m)", "quantity": 14}
+        ]
+    },
+    "Alternative 1 (6-Blade HORIZON 1.8m + 3.6m)": {
+        "fans": [
+            {"model": "6-Blade HORIZON (1.8m)", "quantity": 41},
+            {"model": "6-Blade HORIZON (3.6m)", "quantity": 14}
+        ]
+    },
+    "Alternative 2 (6-Blade HORIZON 4.3m only)": {
+        "fans": [
+            {"model": "6-Blade HORIZON (4.3m)", "quantity": 14}
+        ]
+    }
+}
+
+st.set_page_config(page_title="SG Hawker Airflow Pro - Enhanced", layout="wide")
 
 # --- UI SIDEBAR ---
-st.sidebar.header("📐 Site Dimensions")
-shape_type = st.sidebar.radio("Layout Shape", ["Regular (Rectangular)", "Custom L-Shape", "Composite (Rect+Tri+Circ)"])
+st.sidebar.header("🏢 Project: Tanglin Halt Hawker Centre")
+st.sidebar.info("Based on RFI Submission NCB-THC2-RFA-DT-ME-ELE-001B")
 
-# Bounding Box (The Canvas)
+# Pre-configured scenarios or custom setup
+use_scenario = st.sidebar.checkbox("Use Pre-configured Project Scenarios", value=True)
+
+if use_scenario:
+    scenario = st.sidebar.selectbox("Select Configuration", list(PROJECT_SCENARIOS.keys()))
+    # Extract fan configurations from scenario
+    fan_configs = PROJECT_SCENARIOS[scenario]["fans"]
+    
+    # Display selected configuration
+    st.sidebar.subheader("📋 Fan Configuration")
+    for config in fan_configs:
+        st.sidebar.text(f"{config['model']}: {config['quantity']} nos")
+    
+    # Calculate totals
+    total_fans = sum(config["quantity"] for config in fan_configs)
+    total_power = sum(FAN_DATABASE[config["model"]]["power_w"] * config["quantity"] / 1000 
+                     for config in fan_configs)
+    st.sidebar.metric("Total Fans", f"{total_fans} nos")
+    st.sidebar.metric("Total Power Load", f"{total_power:.1f} kW")
+    
+else:
+    # Custom fan selection (original interface but enhanced)
+    st.sidebar.header("🌀 Custom Fan Selection")
+    fan_choice = st.sidebar.selectbox("Fan Model", list(FAN_DATABASE.keys()))
+    num_fans_requested = st.sidebar.slider("Number of Fans", 1, 50, 10)
+    fan_configs = [{"model": fan_choice, "quantity": num_fans_requested}]
+
+st.sidebar.header("📐 Site Dimensions")
 width = st.sidebar.number_input("Canvas Width (m)", 10, 100, 40)
 length = st.sidebar.number_input("Canvas Length (m)", 10, 100, 40)
 height = st.sidebar.number_input("Ceiling Height (m)", 3, 10, 5)
 
-# --- SHAPE LOGIC ---
+# --- SHAPE LOGIC (simplified for Tanglin Halt) ---
+st.sidebar.header("📍 Layout Shape")
+shape_type = st.sidebar.radio("Layout Shape", ["Regular (Rectangular)", "Custom L-Shape", "Composite"])
+
 params = {}
 if shape_type == "Custom L-Shape":
     params['cw'] = st.sidebar.slider("Cutout Width (m)", 0, int(width-2), 12)
     params['cl'] = st.sidebar.slider("Cutout Length (m)", 0, int(length-2), 16)
-
-elif shape_type == "Composite (Rect+Tri+Circ)":
-    st.sidebar.subheader("💎 Composite Components")
+elif shape_type == "Composite":
+    st.sidebar.subheader("Composite Components")
     params['rect_w'] = st.sidebar.slider("Main Rectangle Width (m)", 5, int(width), 20)
     params['rect_l'] = st.sidebar.slider("Main Rectangle Length (m)", 5, int(length), 30)
     params['tri_base'] = st.sidebar.slider("Triangle Base (m)", 0, int(width), 15)
     params['tri_height'] = st.sidebar.slider("Triangle Height (m)", 0, int(length), 10)
     params['circ_r'] = st.sidebar.slider("Circle Radius (m)", 0, int(min(width, length)/2), 8)
-
-st.sidebar.header("🌀 Fan Settings")
-fan_choice = st.sidebar.selectbox("Fan Model", list(FAN_TYPES.keys()))
-num_fans_requested = st.sidebar.slider("Number of Fans", 1, 50, 10)
 
 # --- IMAGE UPLOAD ---
 st.sidebar.header("📷 Actual Area Image")
@@ -47,7 +144,6 @@ uploaded_image = st.sidebar.file_uploader("Upload floor plan photo", type=['png'
 st.sidebar.markdown("---")
 st.sidebar.header("☕ Support Development")
 paypal_link = "https://www.paypal.com/ncp/payment/CP7XWNDW8NALY"
-
 st.sidebar.markdown(
     f"""
     <a href="{paypal_link}" target="_blank">
@@ -59,13 +155,13 @@ st.sidebar.markdown(
 )
 
 # --- SIMULATION ENGINE ---
-def run_simulation(w, l, n, f_type, shape, p):
+def run_simulation(w, l, h, fan_configs, shape, p):
     x = np.linspace(0, w, int(w))
     y = np.linspace(0, l, int(l))
     X, Y = np.meshgrid(x, y)
     V = np.zeros_like(X)
 
-    # 1. Generate Mask
+    # Generate Mask
     mask = np.full(X.shape, np.nan)
     
     if shape == "Regular (Rectangular)":
@@ -73,78 +169,228 @@ def run_simulation(w, l, n, f_type, shape, p):
     elif shape == "Custom L-Shape":
         mask_logic = ~((X > (w - p['cw'])) & (Y > (l - p['cl'])))
         mask[mask_logic] = 1
-    elif shape == "Composite (Rect+Tri+Circ)":
-        # Main Rectangle (Center bottom)
+    elif shape == "Composite":
         rect = (X <= p['rect_w']) & (Y <= p['rect_l'])
-        # Triangle (Top of rectangle)
         tri = (X <= p['tri_base']) & (Y > p['rect_l']) & (Y <= p['rect_l'] + p['tri_height'])
-        # Circle (Right of rectangle)
         dist_from_center = np.sqrt((X - p['rect_w'])**2 + (Y - (p['rect_l']/2))**2)
         circ = dist_from_center <= p['circ_r']
-        
         mask_logic = rect | tri | circ
         mask[mask_logic] = 1
 
     net_area = np.nansum(mask)
+    volume_m3 = net_area * h
+    volume_ft3 = volume_m3 * 35.3147
 
-    # 2. Fan Placement & Velocity
-    rows = int(np.sqrt(n))
-    cols = (n // rows) + (1 if n % rows != 0 else 0)
-    r_eff = FAN_TYPES[f_type]["radius"]
-    strength = FAN_TYPES[f_type]["cfm"] / 10000
-
-    placed_fans = 0
-    for i in range(n):
-        fx = (i % cols + 0.5) * (w / cols)
-        fy = (i // cols + 0.5) * (l / rows)
+    # Fan placement for multiple fan types
+    placed_fans = []
+    total_airflow_cfm = 0
+    total_power_w = 0
+    
+    for config in fan_configs:
+        model = config["model"]
+        quantity = config["quantity"]
+        fan_data = FAN_DATABASE[model]
         
-        # Check if fan is inside the mask
-        ix, iy = int(min(fx, w-1)), int(min(fy, l-1))
-        if not np.isnan(mask[iy, ix]):
-            placed_fans += 1
-            dist = np.sqrt((X - fx)**2 + (Y - fy)**2)
-            V += strength * np.exp(-dist / (r_eff * 1.5))
+        # Distribute fans across the space
+        rows = int(np.sqrt(quantity))
+        cols = (quantity // rows) + (1 if quantity % rows != 0 else 0)
+        
+        # Effective radius and strength
+        r_eff = fan_data["diameter"] / 2  # radius in meters
+        strength = fan_data["cfm"] / 20000  # normalized strength
+        
+        # Place fans
+        placed = 0
+        for i in range(quantity):
+            fx = (i % cols + 0.5) * (w / cols)
+            fy = (i // cols + 0.5) * (l / rows)
+            
+            # Check if fan is inside the mask
+            ix, iy = int(min(fx, w-1)), int(min(fy, l-1))
+            if not np.isnan(mask[iy, ix]):
+                placed += 1
+                dist = np.sqrt((X - fx)**2 + (Y - fy)**2)
+                V += strength * np.exp(-dist / (r_eff * 1.5))
+                placed_fans.append({"model": model, "x": fx, "y": fy})
+        
+        total_airflow_cfm += fan_data["cfm"] * placed
+        total_power_w += fan_data["power_w"] * placed
 
-    return X, Y, V * mask, net_area, placed_fans
+    # Calculate ACH
+    ach = (total_airflow_cfm * 60) / volume_ft3 if volume_ft3 > 0 else 0
+    
+    return X, Y, V * mask, net_area, volume_m3, placed_fans, total_airflow_cfm, total_power_w, ach
 
 # --- EXECUTION ---
-X, Y, V, actual_area, actual_fans = run_simulation(width, length, num_fans_requested, fan_choice, shape_type, params)
+X, Y, V, actual_area, volume, placed_fans, total_cfm, total_power, ach = run_simulation(
+    width, length, height, fan_configs, shape_type, params
+)
 
-vol_ft3 = (actual_area * height) * 35.3147
-calc_ach = (actual_fans * FAN_TYPES[fan_choice]["cfm"] * 60) / vol_ft3
+# --- DISPLAY RESULTS ---
+st.title(f"🇸🇬 Airflow Simulation: Tanglin Halt Hawker Centre")
+st.info(f"Compliance Check (SS 553): {SS_553_MIN_ACH} ACH Required. SP Approved Load: 1120 kVA")
 
-st.title(f"🇸🇬 Airflow Simulation: {shape_type}")
-st.info(f"Compliance Check (SS 553): {SS_553_MIN_ACH} ACH Required.")
-
-c1, c2, c3 = st.columns(3)
+# Key metrics
+c1, c2, c3, c4 = st.columns(4)
 c1.metric("Effective Floor Area", f"{actual_area:.1f} m²")
-c2.metric("Calculated ACH", f"{calc_ach:.1f}", delta=f"{calc_ach - SS_553_MIN_ACH:.1f}")
-c3.metric("Fans in Building", f"{actual_fans}")
+c2.metric("Volume", f"{volume:.1f} m³")
+c3.metric("Calculated ACH", f"{ach:.1f}", delta=f"{ach - SS_553_MIN_ACH:.1f}")
+c4.metric("Total Power", f"{total_power/1000:.2f} kW")
 
-if calc_ach < SS_553_MIN_ACH:
-    st.error(f"⚠️ Non-Compliant: Need more airflow ({calc_ach:.1f} ACH).")
+# Compliance status
+if ach < SS_553_MIN_ACH:
+    st.error(f"⚠️ Non-Compliant: Need more airflow ({ach:.1f} ACH).")
 else:
     st.success("✅ Standards Met.")
 
-# --- DISPLAY HEATMAP AND IMAGE ---
+# Power consumption analysis (from document page 45)
+st.subheader("⚡ Power Consumption Analysis")
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("**Based on RFI Document (Page 45):**")
+    load_data = {
+        "Configuration": ["8-Blade Design", "6-Blade Design"],
+        "Total Power (kW)": [75.9, 34.5],
+        "Annual Cost (SGD)": [5007, 1316],
+        "Daily Cost (SGD)": [13.72, 3.60]
+    }
+    df_load = pd.DataFrame(load_data)
+    st.dataframe(df_load, use_container_width=True)
+
+with col2:
+    st.markdown("**Current Selection:**")
+    st.metric("Total Power Load", f"{total_power/1000:.2f} kW")
+    if total_power/1000 > 1120:
+        st.warning("⚠️ Exceeds SP approved load (1120 kVA)")
+    else:
+        st.success("✅ Within SP approved load")
+
+# Fan configuration summary
+st.subheader("🌀 Fan Configuration Summary")
+fan_summary = []
+for config in fan_configs:
+    model = config["model"]
+    qty = config["quantity"]
+    fan_data = FAN_DATABASE[model]
+    fan_summary.append({
+        "Model": model,
+        "Diameter": f"{fan_data['diameter']}m",
+        "Blades": fan_data['blades'],
+        "Quantity": qty,
+        "Power per Fan": f"{fan_data['power_w']}W",
+        "Total Power": f"{fan_data['power_w'] * qty / 1000:.1f} kW",
+        "CFM per Fan": f"{fan_data['cfm']:,}",
+        "Total CFM": f"{fan_data['cfm'] * qty:,}"
+    })
+st.dataframe(pd.DataFrame(fan_summary), use_container_width=True)
+
+# --- VISUALIZATION (Before/After style from document) ---
+st.subheader("📊 Airflow Visualization")
+
 if uploaded_image is not None:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("📊 Simulated Airflow")
-        fig = go.Figure(data=go.Heatmap(
-            z=V, x=np.linspace(0, width, int(width)), y=np.linspace(0, length, int(length)),
-            colorscale='Viridis', zmin=0, zmax=5, colorbar=dict(title="m/s")
-        ))
-        fig.update_layout(title="Velocity Distribution Heatmap", height=500)
-        st.plotly_chart(fig, use_container_width=True)
-    with col2:
-        st.subheader("📷 Uploaded Floor Plan")
-        st.image(uploaded_image, caption="Actual Area Image", use_container_width=True)
+    # Create before/after comparison like in document pages 8-10
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Simulated Airflow (After Analysis)", "Uploaded Floor Plan (Before)"),
+        specs=[[{"type": "heatmap"}, {"type": "image"}]]
+    )
+    
+    # Heatmap
+    heatmap = go.Heatmap(
+        z=V, x=np.linspace(0, width, int(width)), y=np.linspace(0, length, int(length)),
+        colorscale='Viridis', zmin=0, zmax=3, colorbar=dict(title="m/s")
+    )
+    fig.add_trace(heatmap, row=1, col=1)
+    
+    # Image
+    from PIL import Image
+    img = Image.open(uploaded_image)
+    fig.add_trace(go.Image(z=img), row=1, col=2)
+    
+    fig.update_layout(height=600, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+    
 else:
-    st.subheader("📊 Simulated Airflow")
+    # Just show heatmap
     fig = go.Figure(data=go.Heatmap(
         z=V, x=np.linspace(0, width, int(width)), y=np.linspace(0, length, int(length)),
-        colorscale='Viridis', zmin=0, zmax=5, colorbar=dict(title="m/s")
+        colorscale='Viridis', zmin=0, zmax=3, colorbar=dict(title="m/s")
     ))
-    fig.update_layout(title="Velocity Distribution Heatmap", height=600)
+    fig.update_layout(title="Airflow Velocity Distribution", height=600)
     st.plotly_chart(fig, use_container_width=True)
+
+# Fan placement overlay (optional)
+if st.checkbox("Show Fan Placement"):
+    fig2 = go.Figure()
+    
+    # Heatmap background
+    fig2.add_trace(go.Heatmap(
+        z=V, x=np.linspace(0, width, int(width)), y=np.linspace(0, length, int(length)),
+        colorscale='Viridis', zmin=0, zmax=3, showscale=False, opacity=0.7
+    ))
+    
+    # Fan markers
+    for fan in placed_fans:
+        model = fan["model"]
+        color = "red" if "8-Blade" in model else "blue"
+        fig2.add_trace(go.Scatter(
+            x=[fan["x"]], y=[fan["y"]],
+            mode='markers+text',
+            marker=dict(size=12, color=color, symbol='circle'),
+            text=model.split()[0],
+            textposition="top center",
+            name=model,
+            showlegend=False
+        ))
+    
+    fig2.update_layout(
+        title="Fan Placement Overlay",
+        xaxis_title="Width (m)",
+        yaxis_title="Length (m)",
+        height=600
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+# Recommendations based on document
+st.subheader("📋 Recommendations from RFI")
+st.info("""
+- The location of HVLS fan shall be reviewed in conjunction with the lighting layout to prevent any throbbing effect.
+- Fan and lighting location shall not overlap.
+- Location and height to be reviewed and approved with architect.
+- 6-blade fans consume less power than 8-blade fans.
+- SP load upgrading may be required if exceeding 1120 kVA.
+""")
+
+# Download report option
+if st.button("📥 Download Simulation Report"):
+    # Create a simple report
+    report = f"""TANGLIN HALT HAWKER CENTRE - AIRFLOW SIMULATION REPORT
+Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}
+
+CONFIGURATION:
+{chr(10).join([f"- {c['model']}: {c['quantity']} nos" for c in fan_configs])}
+
+RESULTS:
+- Floor Area: {actual_area:.1f} m²
+- Volume: {volume:.1f} m³
+- Total Airflow: {total_cfm:,.0f} CFM
+- Air Changes per Hour (ACH): {ach:.1f}
+- SS 553 Requirement: {SS_553_MIN_ACH} ACH
+- Compliance: {'PASS' if ach >= SS_553_MIN_ACH else 'FAIL'}
+
+POWER CONSUMPTION:
+- Total Power: {total_power/1000:.2f} kW
+- Within SP Load (1120 kVA): {'Yes' if total_power/1000 <= 1120 else 'No'}
+
+RECOMMENDATIONS:
+- Review fan locations with lighting layout
+- Avoid overlapping fan and light positions
+- Obtain architect approval for final positions
+"""
+    st.download_button(
+        label="Download Text Report",
+        data=report,
+        file_name=f"airflow_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.txt",
+        mime="text/plain"
+    )
